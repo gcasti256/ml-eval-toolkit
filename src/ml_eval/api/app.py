@@ -12,7 +12,7 @@ def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
     app = FastAPI(
         title="ML Eval Toolkit",
-        description="Production-grade ML model evaluation and benchmarking API",
+        description="ML model evaluation and benchmarking API",
         version=__version__,
         docs_url="/docs",
         redoc_url="/redoc",

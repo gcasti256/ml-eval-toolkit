@@ -80,7 +80,7 @@ def check_regression(
             "baseline_avg": round(baseline_avg, 4),
             "current_avg": round(current_avg, 4),
             "delta": round(delta, 4),
-            "percent_change": round(delta / baseline_avg * 100, 2) if baseline_avg > 0 else 0.0,
+            "percent_change": round(delta / baseline_avg * 100, 2) if abs(baseline_avg) > 1e-9 else 0.0,
         }
 
         if delta < -threshold:

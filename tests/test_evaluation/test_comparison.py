@@ -6,24 +6,15 @@ import pytest
 
 from ml_eval.config import EvalConfig, MetricConfig
 from ml_eval.datasets.schema import DatasetSchema, Sample
-from ml_eval.db import init_db
 from ml_eval.evaluation.comparison import compare_configs
-
-
-@pytest.fixture
-def db() -> sqlite3.Connection:
-    conn = sqlite3.connect(":memory:")
-    conn.row_factory = sqlite3.Row
-    init_db(conn)
-    return conn
 
 
 @pytest.fixture
 def dataset() -> DatasetSchema:
     return DatasetSchema(
         samples=[
-            Sample(input="Q1", expected_output="A1", actual_output="A1"),
-            Sample(input="Q2", expected_output="A2 more text", actual_output="A2 more text"),
+            Sample(input="Q1", expected_output="hello world test", actual_output="hello world test"),
+            Sample(input="Q2", expected_output="foo bar baz qux", actual_output="foo bar baz qux"),
         ],
         name="compare_test",
     )
@@ -39,43 +30,42 @@ class TestCompareConfigs:
             ),
             EvalConfig(
                 dataset_path="test.json",
-                metrics=[MetricConfig(name="bleu", params={"max_n": 2})],
+                metrics=[MetricConfig(name="rouge")],
                 name="config_b",
             ),
         ]
         result = compare_configs(db, dataset, configs)
         assert len(result.results) == 2
         assert result.results[0].name == "config_a"
+        assert result.results[1].name == "config_b"
+        assert "bleu" in result.results[0].aggregated
+        assert "rouge" in result.results[1].aggregated
 
-    def test_summary_table(self, db: sqlite3.Connection, dataset: DatasetSchema) -> None:
+    def test_summary_table_values(self, db: sqlite3.Connection, dataset: DatasetSchema) -> None:
         configs = [
             EvalConfig(
                 dataset_path="test.json",
                 metrics=[MetricConfig(name="rouge")],
-                name="rouge_a",
+                name="rouge_run",
             ),
         ]
         result = compare_configs(db, dataset, configs)
         table = result.summary_table()
         assert len(table) == 1
-        assert "config" in table[0]
+        assert table[0]["config"] == "rouge_run"
+        assert "rouge_avg" in table[0]
+        assert 0 <= table[0]["rouge_avg"] <= 1
 
-    def test_best_config(self, db: sqlite3.Connection, dataset: DatasetSchema) -> None:
+    def test_best_config_returns_none_for_missing_metric(self, db: sqlite3.Connection, dataset: DatasetSchema) -> None:
         configs = [
             EvalConfig(
                 dataset_path="test.json",
                 metrics=[MetricConfig(name="bleu", params={"max_n": 2})],
-                name="alpha",
-            ),
-            EvalConfig(
-                dataset_path="test.json",
-                metrics=[MetricConfig(name="bleu", params={"max_n": 2})],
-                name="beta",
+                name="only_bleu",
             ),
         ]
         result = compare_configs(db, dataset, configs)
-        best = result.best_config("bleu")
-        assert best in ("alpha", "beta")
+        assert result.best_config("nonexistent") is None
 
     def test_auto_naming(self, db: sqlite3.Connection, dataset: DatasetSchema) -> None:
         configs = [
@@ -83,3 +73,9 @@ class TestCompareConfigs:
         ]
         result = compare_configs(db, dataset, configs)
         assert result.results[0].name == "config_1"
+
+    def test_does_not_mutate_input_configs(self, db: sqlite3.Connection, dataset: DatasetSchema) -> None:
+        config = EvalConfig(dataset_path="test.json", metrics=[MetricConfig(name="rouge")])
+        original_name = config.name
+        compare_configs(db, dataset, [config])
+        assert config.name == original_name

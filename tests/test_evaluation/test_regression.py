@@ -6,102 +6,85 @@ import pytest
 
 from ml_eval.config import EvalConfig, MetricConfig
 from ml_eval.datasets.schema import DatasetSchema, Sample
-from ml_eval.db import init_db, save_baseline
+from ml_eval.db import save_baseline
 from ml_eval.evaluation.regression import check_regression
 from ml_eval.evaluation.runner import EvalRunner
 
 
-@pytest.fixture
-def db() -> sqlite3.Connection:
-    conn = sqlite3.connect(":memory:")
-    conn.row_factory = sqlite3.Row
-    init_db(conn)
-    return conn
-
-
-@pytest.fixture
-def dataset() -> DatasetSchema:
-    return DatasetSchema(
-        samples=[
-            Sample(input="Q1", expected_output="hello world", actual_output="hello world"),
-            Sample(input="Q2", expected_output="foo bar baz", actual_output="foo bar baz"),
-        ],
-        name="regression_test",
-    )
-
-
-def _create_baseline(db: sqlite3.Connection, dataset: DatasetSchema) -> str:
-    """Run evaluation and save as baseline."""
+def _run_eval(db: sqlite3.Connection, dataset: DatasetSchema, name: str = "run") -> str:
     config = EvalConfig(
         dataset_path="test.json",
         metrics=[MetricConfig(name="bleu", params={"max_n": 2})],
-        name="baseline_run",
+        name=name,
     )
     runner = EvalRunner(db, config)
-    result = runner.run(dataset)
-    save_baseline(db, result.run_id, "test_baseline")
-    return result.run_id
+    return runner.run(dataset).run_id
 
 
 class TestCheckRegression:
-    def test_no_regression(self, db: sqlite3.Connection, dataset: DatasetSchema) -> None:
-        _create_baseline(db, dataset)
-
-        # Run again with same data — should have no regression
-        config = EvalConfig(
-            dataset_path="test.json",
-            metrics=[MetricConfig(name="bleu", params={"max_n": 2})],
-            name="current_run",
+    def test_no_regression_same_data(self, db: sqlite3.Connection) -> None:
+        dataset = DatasetSchema(
+            samples=[
+                Sample(input="Q1", expected_output="hello world", actual_output="hello world"),
+                Sample(input="Q2", expected_output="foo bar baz", actual_output="foo bar baz"),
+            ],
         )
-        runner = EvalRunner(db, config)
-        result = runner.run(dataset)
+        baseline_id = _run_eval(db, dataset, "baseline")
+        save_baseline(db, baseline_id, "v1")
 
-        reg = check_regression(db, result.run_id, "test_baseline")
+        current_id = _run_eval(db, dataset, "current")
+        reg = check_regression(db, current_id, "v1")
+
         assert not reg.has_regression
+        assert len(reg.regressions) == 0
+        assert reg.baseline_name == "v1"
 
     def test_regression_detected(self, db: sqlite3.Connection) -> None:
-        # Create baseline with perfect scores
-        perfect_ds = DatasetSchema(
+        perfect = DatasetSchema(
             samples=[Sample(input="Q", expected_output="hello world", actual_output="hello world")],
         )
-        _baseline_config = EvalConfig(
-            dataset_path="test.json",
-            metrics=[MetricConfig(name="bleu", params={"max_n": 2})],
-            name="perfect_baseline",
-        )
-        runner = EvalRunner(db, _baseline_config)
-        baseline_result = runner.run(perfect_ds)
-        save_baseline(db, baseline_result.run_id, "perfect_baseline")
+        baseline_id = _run_eval(db, perfect, "perfect")
+        save_baseline(db, baseline_id, "perfect_baseline")
 
-        # Run with degraded data
-        degraded_ds = DatasetSchema(
+        degraded = DatasetSchema(
             samples=[Sample(input="Q", expected_output="hello world", actual_output="completely different text here")],
         )
-        config = EvalConfig(
-            dataset_path="test.json",
-            metrics=[MetricConfig(name="bleu", params={"max_n": 2})],
-            name="degraded_run",
-        )
-        runner2 = EvalRunner(db, config)
-        degraded_result = runner2.run(degraded_ds)
+        current_id = _run_eval(db, degraded, "degraded")
+        reg = check_regression(db, current_id, "perfect_baseline")
 
-        reg = check_regression(db, degraded_result.run_id, "perfect_baseline")
         assert reg.has_regression
-        assert len(reg.regressions) > 0
+        assert len(reg.regressions) == 1
+        assert reg.regressions[0]["metric"] == "bleu"
+        assert reg.regressions[0]["delta"] < 0
+        assert reg.regressions[0]["baseline_avg"] > reg.regressions[0]["current_avg"]
+
+    def test_custom_threshold(self, db: sqlite3.Connection) -> None:
+        dataset = DatasetSchema(
+            samples=[Sample(input="Q", expected_output="hello world", actual_output="hello world")],
+        )
+        baseline_id = _run_eval(db, dataset, "baseline")
+        save_baseline(db, baseline_id, "thresh_baseline")
+        current_id = _run_eval(db, dataset, "current")
+
+        # Very tight threshold — still no regression with same data
+        reg = check_regression(db, current_id, "thresh_baseline", threshold=0.001)
+        assert not reg.has_regression
 
     def test_baseline_not_found(self, db: sqlite3.Connection) -> None:
         with pytest.raises(ValueError, match="not found"):
             check_regression(db, "some-run-id", "nonexistent")
 
-    def test_summary(self, db: sqlite3.Connection, dataset: DatasetSchema) -> None:
-        _create_baseline(db, dataset)
-        config = EvalConfig(
-            dataset_path="test.json",
-            metrics=[MetricConfig(name="bleu", params={"max_n": 2})],
+    def test_summary_values(self, db: sqlite3.Connection) -> None:
+        dataset = DatasetSchema(
+            samples=[Sample(input="Q", expected_output="hello world", actual_output="hello world")],
         )
-        runner = EvalRunner(db, config)
-        result = runner.run(dataset)
-        reg = check_regression(db, result.run_id, "test_baseline")
+        baseline_id = _run_eval(db, dataset, "baseline")
+        save_baseline(db, baseline_id, "sum_baseline")
+        current_id = _run_eval(db, dataset, "current")
+
+        reg = check_regression(db, current_id, "sum_baseline")
         summary = reg.summary()
-        assert "has_regression" in summary
-        assert "regression_count" in summary
+
+        assert summary["has_regression"] is False
+        assert summary["regression_count"] == 0
+        assert summary["baseline"] == "sum_baseline"

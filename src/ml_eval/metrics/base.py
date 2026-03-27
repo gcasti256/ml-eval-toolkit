@@ -20,30 +20,14 @@ class MetricResult:
 
 
 class BaseMetric(ABC):
-    """Abstract base class for evaluation metrics.
-
-    All metrics must implement `compute()` which takes a reference and
-    hypothesis string and returns a MetricResult with a normalized score [0, 1].
-    """
+    """Base class for evaluation metrics. Score is always normalized to [0, 1]."""
 
     @property
     @abstractmethod
-    def name(self) -> str:
-        """Unique identifier for this metric."""
-        ...
+    def name(self) -> str: ...
 
     @abstractmethod
-    def compute(self, reference: str, hypothesis: str) -> MetricResult:
-        """Compute the metric score.
-
-        Args:
-            reference: The ground truth / expected output.
-            hypothesis: The model-generated / actual output.
-
-        Returns:
-            MetricResult with score in [0, 1] and optional details.
-        """
-        ...
+    def compute(self, reference: str, hypothesis: str) -> MetricResult: ...
 
     def compute_batch(
         self, references: list[str], hypotheses: list[str]

@@ -1,7 +1,8 @@
-"""Side-by-side model comparison evaluation."""
+"""Side-by-side model comparison."""
 
 from __future__ import annotations
 
+import copy
 import sqlite3
 from dataclasses import dataclass, field
 from typing import Any
@@ -13,12 +14,9 @@ from ml_eval.evaluation.runner import EvalRunner, RunResult
 
 @dataclass
 class ComparisonResult:
-    """Results from comparing multiple evaluation configs."""
-
     results: list[RunResult] = field(default_factory=list)
 
     def summary_table(self) -> list[dict[str, Any]]:
-        """Generate a comparison table of all configs."""
         rows: list[dict[str, Any]] = []
         for result in self.results:
             row: dict[str, Any] = {"config": result.name, "run_id": result.run_id}
@@ -47,22 +45,14 @@ def compare_configs(
     dataset: DatasetSchema,
     configs: list[EvalConfig],
 ) -> ComparisonResult:
-    """Run evaluation for multiple configs and compare results.
-
-    Args:
-        conn: SQLite connection.
-        dataset: The dataset to evaluate against.
-        configs: List of evaluation configs to compare.
-
-    Returns:
-        ComparisonResult with all run results and comparison utilities.
-    """
+    """Run evaluation for each config and collect results for comparison."""
     comparison = ComparisonResult()
 
     for i, config in enumerate(configs):
-        if not config.name:
-            config.name = f"config_{i + 1}"
-        runner = EvalRunner(conn, config)
+        cfg = copy.copy(config)
+        if not cfg.name:
+            cfg.name = f"config_{i + 1}"
+        runner = EvalRunner(conn, cfg)
         result = runner.run(dataset)
         comparison.results.append(result)
 

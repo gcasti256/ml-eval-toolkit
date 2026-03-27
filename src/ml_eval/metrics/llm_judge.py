@@ -1,7 +1,4 @@
-"""LLM-as-judge evaluation metric.
-
-Uses an LLM to evaluate the quality of model outputs against references.
-"""
+"""LLM-as-judge evaluation via OpenAI API."""
 
 from __future__ import annotations
 
@@ -100,7 +97,10 @@ class LLMJudgeMetric(BaseMetric):
                 "Set OPENAI_API_KEY env var or pass api_key parameter."
             )
 
-        prompt = self.prompt_template.format(reference=reference, hypothesis=hypothesis)
+        try:
+            prompt = self.prompt_template.format(reference=reference, hypothesis=hypothesis)
+        except (KeyError, IndexError) as e:
+            raise ValueError(f"Failed to format judge prompt template: {e}") from e
         client = self._get_client()
 
         response = client.chat.completions.create(
@@ -113,8 +113,9 @@ class LLMJudgeMetric(BaseMetric):
         scores = _parse_judge_response(response_text)
 
         # Normalize overall score from 1-10 to 0-1
-        overall = scores.get("overall", 5)
-        normalized = max(0.0, min(1.0, (overall - 1) / 9))
+        raw_overall = scores.get("overall", 5)
+        overall = max(1, min(10, float(raw_overall)))
+        normalized = (overall - 1) / 9
 
         return MetricResult(
             score=normalized,

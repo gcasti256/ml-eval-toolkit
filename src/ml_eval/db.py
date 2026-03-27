@@ -91,7 +91,10 @@ def store_result(
     score: float,
     details: dict[str, Any] | None = None,
 ) -> str:
-    """Store a single evaluation result. Returns the result ID."""
+    """Store a single evaluation result. Returns the result ID.
+
+    Does not commit — caller should commit after batching inserts.
+    """
     result_id = str(uuid.uuid4())
     now = datetime.now(UTC).isoformat()
     conn.execute(
@@ -109,7 +112,6 @@ def store_result(
             now,
         ),
     )
-    conn.commit()
     return result_id
 
 

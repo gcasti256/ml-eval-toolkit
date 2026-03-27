@@ -1,7 +1,4 @@
-"""ROUGE score implementation from scratch.
-
-Implements ROUGE-1, ROUGE-2, and ROUGE-L with precision, recall, and F1 scores.
-"""
+"""ROUGE-1, ROUGE-2, and ROUGE-L with precision, recall, and F1."""
 
 from __future__ import annotations
 

@@ -2,31 +2,16 @@
 
 from __future__ import annotations
 
+import csv
 import json
 from pathlib import Path
 from typing import Any
-
-import pandas as pd
 
 from ml_eval.datasets.schema import DatasetSchema, Sample
 
 
 def load_dataset(path: str | Path) -> DatasetSchema:
-    """Load a dataset from a file.
-
-    Supports CSV, JSON, and JSONL formats. All formats must contain
-    at minimum 'input' and 'expected_output' columns/fields.
-
-    Args:
-        path: Path to the dataset file.
-
-    Returns:
-        Validated DatasetSchema instance.
-
-    Raises:
-        ValueError: If file format is unsupported or schema validation fails.
-        FileNotFoundError: If the file does not exist.
-    """
+    """Load a dataset from CSV, JSON, or JSONL. Requires 'input' and 'expected_output' fields."""
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError(f"Dataset file not found: {path}")
@@ -44,20 +29,18 @@ def load_dataset(path: str | Path) -> DatasetSchema:
 
 
 def _load_csv(path: Path) -> DatasetSchema:
-    """Load dataset from CSV file."""
-    df = pd.read_csv(path)
-    _validate_columns(df.columns.tolist(), path)
-    samples = _dataframe_to_samples(df)
+    with open(path, newline="") as f:
+        reader = csv.DictReader(f)
+        fieldnames = list(reader.fieldnames or [])
+        _validate_columns(fieldnames, path)
+        samples = [_dict_to_sample(row) for row in reader]
+    if not samples:
+        raise ValueError(f"No data rows found in {path}")
     return DatasetSchema(samples=samples, name=path.stem)
 
 
 def _load_json(path: Path) -> DatasetSchema:
-    """Load dataset from JSON file.
-
-    Accepts either:
-    - A list of objects: [{"input": "...", "expected_output": "..."}, ...]
-    - An object with "samples" key: {"samples": [...], "name": "..."}
-    """
+    """Accepts a list of objects or an object with a 'samples' key."""
     with open(path) as f:
         data: Any = json.load(f)
 
@@ -74,7 +57,6 @@ def _load_json(path: Path) -> DatasetSchema:
                 description=data.get("description", ""),
                 version=data.get("version", "1.0"),
             )
-        # Single object with required fields — treat as one-sample dataset
         if "input" in data and "expected_output" in data:
             return DatasetSchema(samples=[_dict_to_sample(data)], name=path.stem)
 
@@ -85,7 +67,6 @@ def _load_json(path: Path) -> DatasetSchema:
 
 
 def _load_jsonl(path: Path) -> DatasetSchema:
-    """Load dataset from JSONL file (one JSON object per line)."""
     samples: list[Sample] = []
     with open(path) as f:
         for line_num, line in enumerate(f, 1):
@@ -104,24 +85,14 @@ def _load_jsonl(path: Path) -> DatasetSchema:
 
 
 def _validate_columns(columns: list[str], path: Path) -> None:
-    """Validate that required columns exist."""
     required = {"input", "expected_output"}
     missing = required - set(columns)
     if missing:
         raise ValueError(f"Missing required columns in {path}: {missing}")
 
 
-def _dataframe_to_samples(df: pd.DataFrame) -> list[Sample]:
-    """Convert DataFrame rows to Sample objects."""
-    samples: list[Sample] = []
-    for _, row in df.iterrows():
-        d = row.to_dict()
-        samples.append(_dict_to_sample(d))
-    return samples
-
-
 def _dict_to_sample(d: dict[str, Any]) -> Sample:
-    """Convert a dict to a Sample, extracting metadata from extra fields."""
+    """Convert a dict to a Sample, putting extra fields into metadata."""
     known_fields = {"input", "expected_output", "actual_output"}
     metadata = {k: v for k, v in d.items() if k not in known_fields}
     return Sample(

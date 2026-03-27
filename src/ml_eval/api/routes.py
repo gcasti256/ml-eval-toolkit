@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Generator
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -32,11 +33,14 @@ from ml_eval.evaluation.runner import EvalRunner
 router = APIRouter()
 
 
-def get_db() -> sqlite3.Connection:
-    """Dependency: get a database connection."""
+def get_db() -> Generator[sqlite3.Connection, None, None]:
+    """Dependency: yield a database connection and close it after the request."""
     conn = get_connection()
     init_db(conn)
-    return conn
+    try:
+        yield conn
+    finally:
+        conn.close()
 
 
 @router.get("/health", response_model=HealthResponse)

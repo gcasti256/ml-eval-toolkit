@@ -1,8 +1,4 @@
-"""BLEU score implementation from scratch.
-
-Implements the BLEU (Bilingual Evaluation Understudy) metric as described in
-Papineni et al. (2002), with Chen & Cherry (2014) smoothing support.
-"""
+"""BLEU score with configurable n-gram order and smoothing."""
 
 from __future__ import annotations
 

@@ -20,10 +20,9 @@ class RunResult:
     run_id: str
     name: str
     metric_results: dict[str, list[MetricResult]] = field(default_factory=dict)
-    aggregated: dict[str, dict[str, float]] = field(default_factory=dict)
+    aggregated: dict[str, dict[str, float | int]] = field(default_factory=dict)
 
     def summary(self) -> dict[str, Any]:
-        """Return a summary dict of average scores per metric."""
         return {
             "run_id": self.run_id,
             "name": self.name,
@@ -34,12 +33,7 @@ class RunResult:
 
 
 class EvalRunner:
-    """Orchestrates evaluation of metrics against datasets.
-
-    Args:
-        conn: SQLite connection for result storage.
-        config: Evaluation configuration.
-    """
+    """Orchestrates evaluation of metrics against datasets."""
 
     def __init__(self, conn: sqlite3.Connection, config: EvalConfig) -> None:
         self.conn = conn
@@ -47,14 +41,7 @@ class EvalRunner:
         init_db(conn)
 
     def run(self, dataset: DatasetSchema) -> RunResult:
-        """Execute all configured metrics against the dataset.
-
-        Args:
-            dataset: The evaluation dataset.
-
-        Returns:
-            RunResult with per-sample and aggregated scores.
-        """
+        """Execute all configured metrics against the dataset."""
         config_dict = {
             "metrics": [{"name": m.name, "params": m.params} for m in self.config.metrics],
             "judge_model": self.config.judge_model,
@@ -68,14 +55,15 @@ class EvalRunner:
             config=config_dict,
         )
 
-        metrics = self._instantiate_metrics()
         result = RunResult(run_id=run_id, name=self.config.name or "eval_run")
 
         try:
+            metrics = self._instantiate_metrics()
             for metric in metrics:
                 metric_results = self._run_metric(metric, dataset, run_id)
                 result.metric_results[metric.name] = metric_results
                 result.aggregated[metric.name] = self._aggregate(metric_results)
+            self.conn.commit()
             complete_run(self.conn, run_id)
         except Exception:
             fail_run(self.conn, run_id)
@@ -84,7 +72,6 @@ class EvalRunner:
         return result
 
     def _instantiate_metrics(self) -> list[BaseMetric]:
-        """Create metric instances from config."""
         metrics: list[BaseMetric] = []
         for mc in self.config.metrics:
             kwargs = dict(mc.params)
@@ -98,12 +85,8 @@ class EvalRunner:
     def _run_metric(
         self, metric: BaseMetric, dataset: DatasetSchema, run_id: str
     ) -> list[MetricResult]:
-        """Run a single metric against all samples."""
         references = [s.expected_output for s in dataset.samples]
-        hypotheses = [
-            s.actual_output if s.actual_output else s.expected_output
-            for s in dataset.samples
-        ]
+        hypotheses = [s.actual_output or s.expected_output for s in dataset.samples]
 
         results = metric.compute_batch(references, hypotheses)
 
@@ -122,18 +105,6 @@ class EvalRunner:
 
         return results
 
-    def _aggregate(self, results: list[MetricResult]) -> dict[str, float]:
-        """Compute aggregate statistics for a list of results."""
-        scores = [r.score for r in results]
-        if not scores:
-            return {"avg": 0.0, "min": 0.0, "max": 0.0, "count": 0}
-        return {
-            "avg": sum(scores) / len(scores),
-            "min": min(scores),
-            "max": max(scores),
-            "count": float(len(scores)),
-        }
-
     @staticmethod
     def from_metric_names(
         conn: sqlite3.Connection,
@@ -148,3 +119,15 @@ class EvalRunner:
             name=name,
         )
         return EvalRunner(conn, config)
+
+    @staticmethod
+    def _aggregate(results: list[MetricResult]) -> dict[str, float | int]:
+        scores = [r.score for r in results]
+        if not scores:
+            return {"avg": 0.0, "min": 0.0, "max": 0.0, "count": 0.0}
+        return {
+            "avg": sum(scores) / len(scores),
+            "min": min(scores),
+            "max": max(scores),
+            "count": len(scores),
+        }

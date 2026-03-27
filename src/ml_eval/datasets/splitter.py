@@ -50,22 +50,25 @@ def split_dataset(
     test_samples = samples[train_end:test_end]
     val_samples = samples[test_end:]
 
-    # Ensure at least one sample per split when dataset is large enough
-    if n >= 3:
-        if not train_samples:
-            train_samples = [val_samples.pop()] if val_samples else [test_samples.pop()]
-        if not test_samples:
-            test_samples = [val_samples.pop()] if val_samples else [train_samples.pop()]
-        if not val_samples and val_ratio > 0:
-            val_samples = [train_samples.pop()]
+    # Redistribute so every non-zero-ratio split has at least one sample
+    splits = [train_samples, test_samples, val_samples]
+    ratios = [train_ratio, test_ratio, val_ratio]
+    for i, (_split, ratio) in enumerate(zip(splits, ratios, strict=True)):
+        if ratio > 0 and not splits[i]:
+            donor = max(range(3), key=lambda j: len(splits[j]))
+            if splits[donor]:
+                splits[i].append(splits[donor].pop())
 
-    def _make_schema(s: list[Sample], suffix: str) -> DatasetSchema:
+    def _make_schema(s: list[Sample], ratio: float, suffix: str) -> DatasetSchema:
         if not s:
-            # Return a minimal valid dataset if empty
-            return DatasetSchema(
-                samples=[Sample(input="placeholder", expected_output="placeholder")],
-                name=f"{dataset.name}_{suffix}",
-            )
+            if ratio == 0.0:
+                # Zero-ratio split: return a single-sample schema as a no-op placeholder
+                return DatasetSchema(samples=[splits[0][0]], name=f"{dataset.name}_{suffix}")
+            raise ValueError(f"Cannot create {suffix} split: no samples (ratio may be too small)")
         return DatasetSchema(samples=s, name=f"{dataset.name}_{suffix}")
 
-    return _make_schema(train_samples, "train"), _make_schema(test_samples, "test"), _make_schema(val_samples, "val")
+    return (
+        _make_schema(splits[0], ratios[0], "train"),
+        _make_schema(splits[1], ratios[1], "test"),
+        _make_schema(splits[2], ratios[2], "val"),
+    )

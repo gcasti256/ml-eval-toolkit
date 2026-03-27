@@ -2,6 +2,7 @@
 
 import json
 import sqlite3
+from collections.abc import Generator
 from pathlib import Path
 
 import pytest
@@ -23,7 +24,11 @@ def db() -> sqlite3.Connection:
 @pytest.fixture
 def client(db: sqlite3.Connection) -> TestClient:
     app = create_app()
-    app.dependency_overrides[get_db] = lambda: db
+
+    def override_db() -> Generator[sqlite3.Connection, None, None]:
+        yield db
+
+    app.dependency_overrides[get_db] = override_db
     return TestClient(app)
 
 
@@ -61,6 +66,24 @@ class TestEvaluateEndpoint:
         data = response.json()
         assert data["status"] == "completed"
         assert "bleu" in data["scores"]
+        assert 0 <= data["scores"]["bleu"] <= 1
+
+    def test_evaluate_multiple_metrics(self, client: TestClient, sample_dataset: Path) -> None:
+        response = client.post(
+            "/api/v1/evaluate",
+            json={
+                "dataset_path": str(sample_dataset),
+                "metrics": [
+                    {"name": "bleu", "params": {"max_n": 2}},
+                    {"name": "rouge"},
+                ],
+                "name": "multi_metric_test",
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "bleu" in data["scores"]
+        assert "rouge" in data["scores"]
 
     def test_evaluate_missing_dataset(self, client: TestClient) -> None:
         response = client.post(
@@ -87,21 +110,15 @@ class TestResultsEndpoint:
     def test_list_results_empty(self, client: TestClient) -> None:
         response = client.get("/api/v1/results")
         assert response.status_code == 200
-        data = response.json()
-        assert data["count"] == 0
+        assert response.json()["count"] == 0
 
     def test_list_results_after_eval(self, client: TestClient, sample_dataset: Path) -> None:
-        # Run an evaluation first
         client.post(
             "/api/v1/evaluate",
-            json={
-                "dataset_path": str(sample_dataset),
-                "metrics": [{"name": "rouge"}],
-            },
+            json={"dataset_path": str(sample_dataset), "metrics": [{"name": "rouge"}]},
         )
         response = client.get("/api/v1/results")
-        data = response.json()
-        assert data["count"] == 1
+        assert response.json()["count"] == 1
 
     def test_get_result_detail(self, client: TestClient, sample_dataset: Path) -> None:
         eval_response = client.post(
@@ -113,13 +130,52 @@ class TestResultsEndpoint:
             },
         )
         run_id = eval_response.json()["run_id"]
-
         response = client.get(f"/api/v1/results/{run_id}")
         assert response.status_code == 200
         data = response.json()
         assert data["name"] == "detail_test"
+        assert data["status"] == "completed"
         assert len(data["results"]) == 2
+        assert "aggregated_scores" in data
 
     def test_get_nonexistent_result(self, client: TestClient) -> None:
         response = client.get("/api/v1/results/nonexistent-id")
         assert response.status_code == 404
+
+
+class TestCompareEndpoint:
+    def test_compare(self, client: TestClient, sample_dataset: Path) -> None:
+        response = client.post(
+            "/api/v1/compare",
+            json={
+                "dataset_path": str(sample_dataset),
+                "configs": [
+                    {
+                        "dataset_path": str(sample_dataset),
+                        "metrics": [{"name": "rouge"}],
+                        "name": "config_a",
+                    },
+                    {
+                        "dataset_path": str(sample_dataset),
+                        "metrics": [{"name": "rouge"}],
+                        "name": "config_b",
+                    },
+                ],
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["comparison"]) == 2
+        assert "best_per_metric" in data
+
+    def test_compare_missing_dataset(self, client: TestClient) -> None:
+        response = client.post(
+            "/api/v1/compare",
+            json={
+                "dataset_path": "/nonexistent.json",
+                "configs": [
+                    {"dataset_path": "/x.json", "metrics": [{"name": "bleu"}], "name": "a"},
+                ],
+            },
+        )
+        assert response.status_code == 400

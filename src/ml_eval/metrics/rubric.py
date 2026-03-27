@@ -1,7 +1,4 @@
-"""Custom rubric-based scoring metric.
-
-Evaluates text against user-defined criteria with configurable scoring ranges.
-"""
+"""Rubric-based scoring against user-defined criteria."""
 
 from __future__ import annotations
 
@@ -43,7 +40,8 @@ def _evaluate_criterion(criterion: RubricCriterion, text: str) -> tuple[float, d
         checks.append(("min_length", meets_min, 1.0 if meets_min else word_count / criterion.min_length))
     if criterion.max_length > 0:
         meets_max = word_count <= criterion.max_length
-        checks.append(("max_length", meets_max, 1.0 if meets_max else criterion.max_length / word_count))
+        max_score = 1.0 if meets_max else min(1.0, criterion.max_length / word_count)
+        checks.append(("max_length", meets_max, max_score))
 
     # Regex pattern checks
     if criterion.required_patterns:

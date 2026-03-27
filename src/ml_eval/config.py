@@ -1,4 +1,4 @@
-"""Configuration management for ML Eval Toolkit."""
+"""Evaluation configuration and YAML loading."""
 
 from __future__ import annotations
 
@@ -37,20 +37,12 @@ class EvalConfig:
             self.embedding_model = os.environ.get("ML_EVAL_EMBEDDING_MODEL", "all-MiniLM-L6-v2")
 
 
-@dataclass
-class ComparisonConfig:
-    """Configuration for a model comparison run."""
-
-    dataset_path: str
-    configs: list[EvalConfig] = field(default_factory=list)
-    name: str = ""
-
 
 def load_config(path: str | Path) -> EvalConfig:
     """Load evaluation config from a YAML file."""
     path = Path(path)
     with open(path) as f:
-        raw: dict[str, Any] = yaml.safe_load(f)
+        raw: dict[str, Any] = yaml.safe_load(f) or {}
 
     metrics = [
         MetricConfig(name=m["name"], params=m.get("params", {}))
@@ -68,11 +60,3 @@ def load_config(path: str | Path) -> EvalConfig:
     )
 
 
-def load_comparison_config(paths: list[str | Path]) -> ComparisonConfig:
-    """Load multiple eval configs for comparison."""
-    configs = [load_config(p) for p in paths]
-    return ComparisonConfig(
-        dataset_path=configs[0].dataset_path if configs else "",
-        configs=configs,
-        name="comparison",
-    )
