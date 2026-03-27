@@ -1,0 +1,32 @@
+{
+  "name": "sample_evaluation_dataset",
+  "description": "Small sample dataset for demonstrating ML Eval Toolkit",
+  "version": "1.0",
+  "samples": [
+    {
+      "input": "Translate the following to French: 'The weather is nice today.'",
+      "expected_output": "Le temps est beau aujourd'hui.",
+      "actual_output": "Le temps est beau aujourd'hui."
+    },
+    {
+      "input": "Summarize the concept of machine learning in one sentence.",
+      "expected_output": "Machine learning is a subset of artificial intelligence that enables systems to learn and improve from experience without being explicitly programmed.",
+      "actual_output": "Machine learning is a branch of AI where computers learn from data to make predictions and decisions without explicit programming."
+    },
+    {
+      "input": "What is the capital of France?",
+      "expected_output": "The capital of France is Paris.",
+      "actual_output": "Paris is the capital of France."
+    },
+    {
+      "input": "Explain what a neural network is.",
+      "expected_output": "A neural network is a computing system inspired by biological neural networks in the brain. It consists of layers of interconnected nodes that process information using weighted connections, learning patterns from data through training.",
+      "actual_output": "A neural network is a computational model inspired by the human brain, made up of layers of nodes (neurons) that process data, learn patterns, and make predictions through weighted connections adjusted during training."
+    },
+    {
+      "input": "Convert 100 Celsius to Fahrenheit.",
+      "expected_output": "100 degrees Celsius is equal to 212 degrees Fahrenheit.",
+      "actual_output": "100 degrees Celsius equals 212 degrees Fahrenheit."
+    }
+  ]
+}
