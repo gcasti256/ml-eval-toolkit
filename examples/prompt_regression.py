@@ -1,7 +1,13 @@
-"""Prompt regression testing — detect score degradations against a baseline."""
+"""Prompt regression testing — detect score degradations against a baseline.
+
+Demonstrates:
+1. Running an evaluation and saving it as a baseline
+2. Running a second evaluation with degraded outputs
+3. Detecting regressions via threshold-based comparison
+"""
 
 from ml_eval.config import EvalConfig, MetricConfig
-from ml_eval.datasets.loader import load_dataset
+from ml_eval.datasets.schema import DatasetSchema, Sample
 from ml_eval.db import get_connection, init_db, save_baseline
 from ml_eval.evaluation.regression import check_regression
 from ml_eval.evaluation.runner import EvalRunner
@@ -11,12 +17,32 @@ def main() -> None:
     conn = get_connection(":memory:")
     init_db(conn)
 
-    dataset = load_dataset("examples/sample_data.json")
+    # Good outputs — these will be our baseline
+    baseline_dataset = DatasetSchema(
+        samples=[
+            Sample(
+                input="What is the capital of France?",
+                expected_output="The capital of France is Paris.",
+                actual_output="Paris is the capital of France.",
+            ),
+            Sample(
+                input="Translate 'hello' to Spanish.",
+                expected_output="Hola",
+                actual_output="Hola",
+            ),
+            Sample(
+                input="What is 2 + 2?",
+                expected_output="2 + 2 equals 4.",
+                actual_output="2 + 2 equals 4.",
+            ),
+        ],
+        name="regression_demo",
+    )
 
-    # Step 1: Run initial evaluation and save as baseline
+    # Step 1: Run baseline evaluation and save it
     print("Step 1: Establishing baseline...")
     baseline_config = EvalConfig(
-        dataset_path="examples/sample_data.json",
+        dataset_path="demo.json",
         metrics=[
             MetricConfig(name="bleu"),
             MetricConfig(name="rouge"),
@@ -25,17 +51,38 @@ def main() -> None:
     )
 
     runner = EvalRunner(conn, baseline_config)
-    baseline_result = runner.run(dataset)
+    baseline_result = runner.run(baseline_dataset)
     save_baseline(conn, baseline_result.run_id, "v1_baseline")
 
-    print(f"Baseline saved (run_id: {baseline_result.run_id})")
+    print(f"  Baseline saved (run_id: {baseline_result.run_id})")
     for metric, scores in baseline_result.aggregated.items():
-        print(f"  {metric}: {scores['avg']:.4f}")
+        print(f"  {metric}: avg={scores['avg']:.4f}")
 
-    # Step 2: Run a new evaluation (simulating a prompt change)
-    print("\nStep 2: Running current evaluation...")
+    # Step 2: Simulate a prompt change that degrades quality
+    print("\nStep 2: Running evaluation after 'prompt change'...")
+    degraded_dataset = DatasetSchema(
+        samples=[
+            Sample(
+                input="What is the capital of France?",
+                expected_output="The capital of France is Paris.",
+                actual_output="France is a country in Europe with many cities.",  # Wrong answer
+            ),
+            Sample(
+                input="Translate 'hello' to Spanish.",
+                expected_output="Hola",
+                actual_output="Buenos dias amigo",  # Incorrect translation
+            ),
+            Sample(
+                input="What is 2 + 2?",
+                expected_output="2 + 2 equals 4.",
+                actual_output="The sum of two and two is four.",  # Still ok but different
+            ),
+        ],
+        name="regression_demo",
+    )
+
     current_config = EvalConfig(
-        dataset_path="examples/sample_data.json",
+        dataset_path="demo.json",
         metrics=[
             MetricConfig(name="bleu"),
             MetricConfig(name="rouge"),
@@ -44,10 +91,10 @@ def main() -> None:
     )
 
     current_runner = EvalRunner(conn, current_config)
-    current_result = current_runner.run(dataset)
+    current_result = current_runner.run(degraded_dataset)
 
     for metric, scores in current_result.aggregated.items():
-        print(f"  {metric}: {scores['avg']:.4f}")
+        print(f"  {metric}: avg={scores['avg']:.4f}")
 
     # Step 3: Check for regressions
     print("\nStep 3: Checking for regressions (threshold: 5%)...")

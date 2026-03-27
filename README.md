@@ -4,46 +4,27 @@
 ![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)
 
-Production-grade ML model evaluation and benchmarking platform. Evaluate LLM and NLP outputs with pluggable metrics, run side-by-side model comparisons, and catch prompt regressions before they ship.
+ML model evaluation and benchmarking toolkit. Evaluate LLM and NLP outputs with pluggable metrics, run side-by-side model comparisons, and catch prompt regressions before they ship.
 
-Built for ML teams that need repeatable, automated quality gates in their development workflow — not another notebook-only solution.
+Built for ML teams that need repeatable, automated quality gates — not another notebook-only solution.
 
 ## Architecture
 
 ```mermaid
 graph LR
-    subgraph Input
-        D[Dataset Loader<br/>CSV / JSON / JSONL]
-    end
+    D[Dataset Loader<br/>CSV / JSON / JSONL] --> R[Evaluation Runner]
 
-    subgraph Metrics Engine
-        BLEU[BLEU]
-        ROUGE[ROUGE]
-        SEM[Semantic<br/>Similarity]
-        RUB[Rubric<br/>Scoring]
-        LLM[LLM-as-Judge]
-    end
+    R --> BLEU[BLEU]
+    R --> ROUGE[ROUGE]
+    R --> SEM[Semantic<br/>Similarity]
+    R --> RUB[Rubric<br/>Scoring]
+    R --> LLM[LLM-as-Judge]
 
-    subgraph Evaluation
-        R[Evaluation Runner]
-        C[Model Comparison]
-        REG[Regression<br/>Testing]
-    end
-
-    subgraph Output
-        DB[(SQLite<br/>Storage)]
-        EXP[Export<br/>JSON / CSV]
-        VIZ[Charts &<br/>Visualization]
-    end
-
-    D --> R
-    R --> BLEU & ROUGE & SEM & RUB & LLM
-    BLEU & ROUGE & SEM & RUB & LLM --> R
-    R --> DB
-    R --> C
-    R --> REG
-    DB --> EXP
-    DB --> VIZ
+    R --> DB[(SQLite<br/>Storage)]
+    R --> C[Model Comparison]
+    R --> REG[Regression<br/>Testing]
+    DB --> EXP[Export<br/>JSON / CSV]
+    DB --> VIZ[Charts &<br/>Visualization]
 ```
 
 ## Features
@@ -54,7 +35,7 @@ graph LR
 - **Regression testing** — Set baselines and detect score degradations in CI with configurable thresholds
 - **Result storage** — SQLite-backed persistence with aggregation queries and export to JSON/CSV
 - **Visualization** — Matplotlib charts for score distributions and comparison bar charts
-- **CLI + API** — Click CLI for scripting and CI, FastAPI dashboard for programmatic access
+- **CLI + API** — Click CLI for scripting and CI, FastAPI for programmatic access
 - **Extensible** — Add custom metrics by subclassing `BaseMetric` with a single `compute()` method
 
 ## Installation
@@ -64,6 +45,17 @@ git clone https://github.com/gcasti256/ml-eval-toolkit.git
 cd ml-eval-toolkit
 python3 -m venv .venv
 source .venv/bin/activate
+
+# Core install (BLEU, ROUGE, rubric metrics)
+pip install -e .
+
+# With semantic similarity (downloads sentence-transformers + PyTorch)
+pip install -e ".[semantic]"
+
+# With LLM-as-judge (requires OPENAI_API_KEY)
+pip install -e ".[llm]"
+
+# Everything including dev tools
 pip install -e ".[dev]"
 ```
 
@@ -126,11 +118,11 @@ ml-eval results --format table
 
 | Metric | Key | What It Measures | Requires |
 |--------|-----|-----------------|----------|
-| BLEU | `bleu` | N-gram precision with brevity penalty (Papineni et al., 2002) | Nothing |
+| BLEU | `bleu` | N-gram precision with brevity penalty | Nothing |
 | ROUGE | `rouge` | N-gram recall (ROUGE-1, ROUGE-2) and LCS (ROUGE-L) | Nothing |
-| Semantic Similarity | `semantic` | Cosine similarity of sentence embeddings | `sentence-transformers` model |
+| Semantic Similarity | `semantic` | Cosine similarity of sentence embeddings | `pip install -e ".[semantic]"` |
 | Rubric | `rubric` | Custom criteria: keyword presence, length, regex patterns | Criteria config |
-| LLM-as-Judge | `llm_judge` | LLM evaluates accuracy, completeness, and clarity (1-10) | `OPENAI_API_KEY` |
+| LLM-as-Judge | `llm_judge` | LLM evaluates accuracy, completeness, and clarity (1-10) | `pip install -e ".[llm]"` + `OPENAI_API_KEY` |
 
 ### Custom Metrics
 
@@ -199,14 +191,14 @@ ml-eval-toolkit/
 │   ├── reporting/        # Output + visualization
 │   │   ├── exporter.py   # JSON/CSV export
 │   │   └── visualizer.py # Matplotlib charts
-│   ├── api/              # FastAPI dashboard
+│   ├── api/              # FastAPI server
 │   │   ├── app.py        # App factory
 │   │   ├── routes.py     # API route handlers
 │   │   └── schemas.py    # Request/response models
 │   ├── cli.py            # Click CLI
 │   ├── config.py         # Configuration management
 │   └── db.py             # SQLite storage layer
-├── tests/                # Comprehensive test suite
+├── tests/                # Test suite
 ├── examples/             # Runnable example scripts
 ├── .github/workflows/    # CI/CD
 └── pyproject.toml        # Project config + dependencies
@@ -219,7 +211,7 @@ ml-eval-toolkit/
 - **FastAPI** for the REST API layer
 - **Click + Rich** for the CLI
 - **SQLite** for lightweight, zero-config result storage
-- **sentence-transformers** for semantic similarity embeddings
+- **sentence-transformers** (optional) for semantic similarity embeddings
 - **Matplotlib** for visualization
 - **Ruff** for linting, **pytest** for testing
 
